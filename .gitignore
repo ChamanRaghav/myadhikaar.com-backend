@@ -8,3 +8,5 @@ coverage/
 .DS_Store
 /src/generated/
 /.pgdata/
+
+/src/generated/prisma
