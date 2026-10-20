@@ -629,6 +629,39 @@ templates.login_code = ({ code }) => ({
 <p style="color:#9ca3af;font-size:13px">If you didn't try to sign in, you can ignore this email.</p>`,
 });
 
+// ── RoadGuard subscription (new) ─────────────────────────────────────────────
+templates.rgl_subscription_confirmed = ({ name, policyNumber, planName, fleetSize, amount, activationDate, expiryDate, invoiceNumber, taxableAmount, gstAmount }) => ({
+  subject: `🛡️ RoadGuard Legal — Payment Confirmed: ${planName}`,
+  body: `<h2>Dear ${name},</h2>
+<p>Your RoadGuard Legal subscription is confirmed.</p>
+<table>
+  <tr><td>Policy number</td><td>${policyNumber}</td></tr>
+  <tr><td>Plan</td><td>${planName}</td></tr>
+  <tr><td>Vehicles</td><td>${fleetSize}</td></tr>
+  <tr><td>Invoice</td><td>${invoiceNumber}</td></tr>
+  <tr><td>Amount (excl. GST)</td><td>₹${taxableAmount}</td></tr>
+  <tr><td>GST (18%)</td><td>₹${gstAmount}</td></tr>
+  <tr><td>Total paid</td><td>₹${amount}</td></tr>
+  <tr><td>Active from</td><td>${activationDate}</td></tr>
+  <tr><td>Valid until</td><td>${expiryDate}</td></tr>
+</table>
+<p>For emergency legal help call <b>+91 8266820000</b> (24/7).</p>
+<p>— Team MyAdhikaar</p>`,
+});
+
+templates.admin_rgl_subscription_confirmed = ({ name, email, phone, planName, fleetSize, vehicleType, months, amount, gstAmount, policyNumber, invoiceNumber, vehicles }) => ({
+  subject: `[RoadGuard] New subscription ${policyNumber}`,
+  body: `<h2>New RoadGuard subscription</h2>
+<table>
+  <tr><td>Buyer</td><td>${name} (${email}, ${phone})</td></tr>
+  <tr><td>Plan</td><td>${planName} · ${fleetSize} ${vehicleType} vehicle(s) · ${months} month(s)</td></tr>
+  <tr><td>Paid</td><td>₹${amount} (incl. ₹${gstAmount} GST)</td></tr>
+  <tr><td>Policy</td><td>${policyNumber}</td></tr>
+  <tr><td>Invoice</td><td>${invoiceNumber}</td></tr>
+</table>
+<p>${(vehicles || []).join('<br>')}</p>`,
+});
+
 export function wrapHtml(htmlBody: string): string {
   return `<!DOCTYPE html>
 <html>

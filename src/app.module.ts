@@ -10,7 +10,10 @@ import { Env, validateEnv } from './config/env.js';
 import { EntitiesModule } from './entities/entities.module.js';
 import { HealthController } from './health/health.controller.js';
 import { MailModule } from './mail/mail.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { SessionsModule } from './sessions/sessions.module.js';
+import { WalletModule } from './wallet/wallet.module.js';
 
 @Module({
   imports: [
@@ -28,6 +31,9 @@ import { PrismaModule } from './prisma/prisma.module.js';
     MailModule,
     AuthModule,
     EntitiesModule,
+    WalletModule,
+    PaymentsModule,
+    SessionsModule,
   ],
   controllers: [HealthController],
   providers: [

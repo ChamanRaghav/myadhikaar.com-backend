@@ -107,8 +107,10 @@ model AgentConversation {
   agent_name   String
   user_email   String?
   metadata     Json?
-  /// [{ role, content, created_date }]
+  /// What the chat shows: [{ id, role, content, file_urls?, created_date }]
   messages     Json     @default("[]")
+  /// Messages API history replayed to Claude, append-only (thinking and tool blocks kept as returned)
+  history      Json     @default("[]")
   created_date DateTime @default(now()) @db.Timestamptz(3)
   updated_date DateTime @default(now()) @updatedAt @db.Timestamptz(3)
 
