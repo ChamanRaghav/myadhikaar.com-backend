@@ -1,0 +1,1763 @@
+// MyAdhikaar database schema.
+//
+// The models after "Entities" were converted from the Base44 entity
+// definitions. Field names, IDs and timestamps are kept as they were in
+// Base44 so migrated data and the frontend keep working unchanged.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Accounts & auth ─────────────────────────────────────────────────
+
+model User {
+  id                    String         @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Stored lowercase; the login identity for email codes and Google
+  email                 String         @unique
+  full_name             String?
+  /// "admin" or "user"
+  role                  String         @default("user")
+  phone                 String?
+  city                  String?
+  notifications_enabled Boolean?
+  avatar_url            String?
+  /// Google account id, set on first Google sign-in
+  google_sub            String?        @unique
+  disabled              Boolean        @default(false)
+  last_login_at         DateTime?      @db.Timestamptz(3)
+  /// Extra attributes carried over from Base44
+  data                  Json?
+  created_date          DateTime       @default(now()) @db.Timestamptz(3)
+  updated_date          DateTime       @default(now()) @updatedAt @db.Timestamptz(3)
+  refresh_tokens        RefreshToken[]
+
+  @@map("users")
+}
+
+model OtpCode {
+  id           String    @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  email        String
+  /// SHA-256 of the 6-digit code
+  code_hash    String
+  expires_at   DateTime  @db.Timestamptz(3)
+  attempts     Int       @default(0)
+  consumed_at  DateTime? @db.Timestamptz(3)
+  ip           String?
+  created_date DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([email, created_date])
+  @@map("otp_codes")
+}
+
+model RefreshToken {
+  id           String    @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  user_id      String
+  user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  /// SHA-256 of the token; only the client ever holds the token itself
+  token_hash   String    @unique
+  /// Rotation family: reusing a rotated token revokes the whole family
+  family_id    String
+  expires_at   DateTime  @db.Timestamptz(3)
+  revoked_at   DateTime? @db.Timestamptz(3)
+  user_agent   String?
+  ip           String?
+  created_date DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([user_id])
+  @@index([family_id])
+  @@map("refresh_tokens")
+}
+
+// ── Payments ────────────────────────────────────────────────────────
+
+model PaymentOrder {
+  /// Cashfree order id, generated server-side (WLT…, SRV…, RGL…)
+  id             String    @id
+  user_email     String?
+  /// wallet_recharge | service | rgl_subscription
+  purpose        String
+  /// Amount to charge, always computed server-side
+  amount         Float
+  currency       String    @default("INR")
+  /// created | paid | failed | fulfilled
+  status         String    @default("created")
+  /// Whatever fulfilment needs (wallet credit and bonus, service request id, plan…)
+  meta           Json?
+  cf_payment_id  String?
+  payment_method String?
+  paid_at        DateTime? @db.Timestamptz(3)
+  fulfilled_at   DateTime? @db.Timestamptz(3)
+  created_date   DateTime  @default(now()) @db.Timestamptz(3)
+  updated_date   DateTime  @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@index([user_email])
+  @@index([status])
+  @@map("payment_orders")
+}
+
+// ── AI assistant ────────────────────────────────────────────────────
+
+model AgentConversation {
+  id           String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  agent_name   String
+  user_email   String?
+  metadata     Json?
+  /// What the chat shows: [{ id, role, content, file_urls?, created_date }]
+  messages     Json     @default("[]")
+  /// Messages API history replayed to Claude, append-only (thinking and tool blocks kept as returned)
+  history      Json     @default("[]")
+  created_date DateTime @default(now()) @db.Timestamptz(3)
+  updated_date DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@index([user_email])
+  @@map("agent_conversations")
+}
+
+// ── Uploads ─────────────────────────────────────────────────────────
+
+model FileUpload {
+  id           String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  key          String   @unique
+  url          String
+  content_type String?
+  size         Int?
+  uploaded_by  String?
+  created_date DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("file_uploads")
+}
+
+// ── Entities (converted from Base44) ────────────────────────────────
+
+model Blog {
+  id                String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Blog post title
+  title             String?
+  /// URL-friendly slug
+  slug              String?
+  /// Blog category — One of: legal_services, case_study, compliance, roadguard, consumer_rights, business_law
+  category          String?
+  /// Short summary shown in listings
+  excerpt           String?
+  /// Full blog post content (HTML or markdown)
+  content           String?
+  /// Cover image URL
+  cover_image       String?
+  /// Author name
+  author_name       String?
+  /// SEO tags and keywords
+  tags              Json?
+  /// Whether blog is visible to public
+  is_published      Boolean? @default(false)
+  /// Show in featured section
+  is_featured       Boolean? @default(false)
+  /// Estimated read time
+  read_time_minutes Float?
+  /// SEO meta description (150-160 chars recommended)
+  meta_description  String?
+  /// Comma-separated SEO keywords for this post
+  meta_keywords     String?
+  /// Target city for geo-SEO e.g. Delhi, Mumbai
+  geo_city          String?
+  /// Target state e.g. Delhi, Maharashtra
+  geo_state         String?
+  /// Target country
+  geo_country       String?  @default("India")
+  /// ISO 3166-2 region code e.g. IN-DL for Delhi
+  geo_region        String?
+  /// Primary SEO keyword / keyphrase for this post
+  focus_keyword     String?
+  /// Number of times this post has been viewed
+  view_count        Float?   @default(0)
+  created_date      DateTime @default(now()) @db.Timestamptz(3)
+  updated_date      DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by        String?
+  created_by_id     String?
+
+  @@index([slug])
+  @@index([created_date])
+  @@map("blogs")
+}
+
+model Case {
+  id                   String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Auto-generated unique case ID
+  case_id              String?
+  /// Client's email
+  client_email         String?
+  /// Client's full name
+  client_name          String?
+  /// Case title
+  title                String?
+  /// Case description / problem statement
+  description          String?
+  /// Case category — One of: criminal, domestic_violence, bail, high_court, supreme_court, pil, civil, family, property, labour, consumer, other
+  category             String?
+  /// Court level — One of: trial, sessions, high_court, supreme_court, tribunal, other
+  court_level          String?
+  /// Current case status — One of: pending, active, in_review, filed, listed, disposed, completed, cancelled
+  status               String?  @default("pending")
+  /// Filing stage — One of: drafted, filed, listed, disposed
+  filing_status        String?
+  /// Case health indicator — One of: green, amber, red
+  health_status        String?  @default("green")
+  /// Limitation/deadline date — Format: date
+  limitation_date      String?
+  /// Next scheduled hearing date — Format: date
+  next_hearing_date    String?
+  /// Assigned lawyer ID
+  assigned_lawyer_id   String?
+  /// Assigned lawyer name
+  assigned_lawyer_name String?
+  /// Amount paid in INR
+  amount_paid          Float?
+  /// Agreed fee in INR
+  fee_agreed           Float?
+  /// Internal notes
+  notes                String?
+  /// AI-generated summary of the case
+  ai_summary           String?
+  /// List of missing documents flagged by AI
+  missing_documents    Json?
+  /// Case tags
+  tags                 Json?
+  created_date         DateTime @default(now()) @db.Timestamptz(3)
+  updated_date         DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by           String?
+  created_by_id        String?
+
+  @@index([case_id])
+  @@index([client_email])
+  @@index([status])
+  @@index([assigned_lawyer_id])
+  @@index([created_date])
+  @@map("cases")
+}
+
+model CaseDocument {
+  id                String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Reference to Case entity ID
+  case_id           String?
+  /// Document name
+  name              String?
+  /// Document folder/category — One of: fir, orders, affidavits, pleadings, evidence, correspondence, certified_copies, other
+  folder            String?
+  /// Version label e.g. Draft v1, Final
+  version           String?
+  /// URL of the uploaded file
+  file_url          String?
+  /// AI-generated summary of this document
+  ai_summary        String?
+  /// Email of uploader
+  uploaded_by       String?
+  /// Is this a certified copy?
+  is_certified_copy Boolean? @default(false)
+  /// Optional description or notes about this document
+  description       String?
+  created_date      DateTime @default(now()) @db.Timestamptz(3)
+  updated_date      DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by        String?
+  created_by_id     String?
+
+  @@index([case_id])
+  @@index([created_date])
+  @@map("case_documents")
+}
+
+model ChatMessage {
+  id              String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Unique ID for the conversation: lawyer_id + '_' + user_email
+  conversation_id String?
+  /// Sender's email
+  sender_email    String?
+  /// Sender's display name
+  sender_name     String?
+  /// Role of sender — One of: user, advocate
+  sender_role     String?
+  /// Text message content
+  content         String?
+  /// URL of attached file/image/video
+  file_url        String?
+  /// Original file name
+  file_name       String?
+  /// MIME type of the file
+  file_type       String?
+  /// Whether the message has been read
+  is_read         Boolean? @default(false)
+  /// Lawyer ID in this conversation
+  lawyer_id       String?
+  /// User email in this conversation
+  user_email      String?
+  created_date    DateTime @default(now()) @db.Timestamptz(3)
+  updated_date    DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by      String?
+  created_by_id   String?
+
+  @@index([sender_email])
+  @@index([lawyer_id])
+  @@index([user_email])
+  @@index([created_date])
+  @@map("chat_messages")
+}
+
+model Consultation {
+  id                String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Client's email
+  client_email      String?
+  /// Client's name
+  client_name       String?
+  /// ID of the assigned lawyer
+  lawyer_id         String?
+  /// Name of the lawyer
+  lawyer_name       String?
+  /// Consultation status — One of: scheduled, in_progress, completed, cancelled
+  status            String?  @default("scheduled")
+  /// Scheduled date and time — Format: date-time
+  scheduled_date    String?
+  /// Duration in minutes
+  duration_minutes  Float?
+  /// Amount paid in INR
+  amount_paid       Float?
+  /// Consultation notes
+  notes             String?
+  /// Type of consultation — One of: audio, video
+  consultation_type String?
+  created_date      DateTime @default(now()) @db.Timestamptz(3)
+  updated_date      DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by        String?
+  created_by_id     String?
+
+  @@index([client_email])
+  @@index([lawyer_id])
+  @@index([status])
+  @@index([created_date])
+  @@map("consultations")
+}
+
+model Dispute {
+  id              String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Email of person raising dispute
+  raised_by_email String?
+  /// Name of person raising dispute
+  raised_by_name  String?
+  /// Who is raising the dispute — One of: user, advocate
+  raised_by_role  String?
+  /// Dispute type — One of: wrong_deduction, payment_not_received, late_settlement, duplicate_charge, service_quality, advocate_misconduct, other
+  type            String?
+  /// Amount in dispute (INR)
+  amount          Float?
+  /// Detailed description
+  description     String?
+  /// Related lawyer ID if any
+  lawyer_id       String?
+  /// Related lawyer name
+  lawyer_name     String?
+  /// Related consultation ID if any
+  consultation_id String?
+  /// Dispute status — One of: open, under_review, resolved, rejected
+  status          String?  @default("open")
+  /// Admin resolution notes
+  admin_notes     String?
+  /// Admin who resolved
+  resolved_by     String?
+  /// Amount refunded if any
+  refund_amount   Float?
+  created_date    DateTime @default(now()) @db.Timestamptz(3)
+  updated_date    DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by      String?
+  created_by_id   String?
+
+  @@index([raised_by_email])
+  @@index([lawyer_id])
+  @@index([consultation_id])
+  @@index([status])
+  @@index([created_date])
+  @@map("disputes")
+}
+
+model Escalation {
+  id               String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Reference to Case ID
+  case_id          String?
+  /// Client who raised escalation
+  client_email     String?
+  /// Client name
+  client_name      String?
+  /// Lawyer against whom escalation is raised
+  lawyer_id        String?
+  /// Lawyer name
+  lawyer_name      String?
+  /// Escalation type — One of: non_responsive, case_review, senior_counsel, misconduct, other
+  type             String?
+  /// Escalation details
+  description      String?
+  /// Escalation severity level — One of: level_1, level_2, level_3
+  level            String?  @default("level_1")
+  /// Escalation status — One of: open, in_review, resolved, escalated
+  status           String?  @default("open")
+  /// Admin resolution notes
+  resolution_notes String?
+  /// Admin who resolved
+  resolved_by      String?
+  created_date     DateTime @default(now()) @db.Timestamptz(3)
+  updated_date     DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by       String?
+  created_by_id    String?
+
+  @@index([case_id])
+  @@index([client_email])
+  @@index([lawyer_id])
+  @@index([status])
+  @@index([created_date])
+  @@map("escalations")
+}
+
+model FleetDriver {
+  id                      String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// FleetOwner entity ID
+  fleet_owner_id          String?
+  /// Owner's email
+  owner_email             String?
+  /// Policy number
+  policy_number           String?
+  /// Driver full name
+  name                    String?
+  /// Phone number
+  phone                   String?
+  /// Email if available
+  email                   String?
+  /// Driving licence number
+  dl_number               String?
+  /// DL expiry date — Format: date
+  dl_expiry               String?
+  /// Residential address
+  address                 String?
+  /// Emergency contact number
+  emergency_contact       String?
+  /// FleetVehicle entity ID
+  assigned_vehicle_id     String?
+  /// Vehicle registration number
+  assigned_vehicle_number String?
+  /// One of: active, inactive, suspended
+  status                  String?  @default("active")
+  /// Admin notes
+  notes                   String?
+  created_date            DateTime @default(now()) @db.Timestamptz(3)
+  updated_date            DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by              String?
+  created_by_id           String?
+
+  @@index([fleet_owner_id])
+  @@index([owner_email])
+  @@index([policy_number])
+  @@index([email])
+  @@index([status])
+  @@index([created_date])
+  @@map("fleet_drivers")
+}
+
+model FleetInvoice {
+  id                 String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// e.g. INV-2026-0001
+  invoice_number     String?
+  /// Policy number
+  policy_number      String?
+  /// FleetOwner entity ID
+  fleet_owner_id     String?
+  /// Fleet owner name
+  owner_name         String?
+  /// Fleet owner email
+  owner_email        String?
+  /// Fleet owner phone
+  owner_phone        String?
+  /// Company name
+  company_name       String?
+  /// Plan purchased e.g. Intercity Growth
+  plan               String?
+  /// Number of vehicles
+  vehicle_count      Float?
+  /// Amount paid in INR
+  amount             Float?
+  /// GST (18%) in INR
+  gst_amount         Float?
+  /// Total incl. GST
+  total_amount       Float?
+  /// PayU transaction ID
+  transaction_id     String?
+  /// e.g. UPI, Card, NetBanking
+  payment_method     String?
+  /// Payment date — Format: date
+  payment_date       String?
+  /// Format: date
+  subscription_start String?
+  /// Format: date
+  subscription_end   String?
+  /// One of: paid, pending, failed, refunded
+  status             String?  @default("paid")
+  /// URL to generated PDF invoice
+  pdf_url            String?
+  email_sent         Boolean? @default(false)
+  notes              String?
+  created_date       DateTime @default(now()) @db.Timestamptz(3)
+  updated_date       DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by         String?
+  created_by_id      String?
+
+  @@index([policy_number])
+  @@index([fleet_owner_id])
+  @@index([owner_email])
+  @@index([status])
+  @@index([created_date])
+  @@map("fleet_invoices")
+}
+
+model FleetOwner {
+  id                 String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Email of the fleet owner (matched with User)
+  user_email         String?
+  owner_name         String?
+  /// RoadGuard policy number
+  policy_number      String?
+  company_name       String?
+  phone              String?
+  /// GST registration number
+  gst_number         String?
+  /// Registered address
+  address            String?
+  /// Total vehicles in fleet
+  fleet_size         Float?
+  /// One of: cab, lcv, truck, bus, mixed
+  vehicle_type       String?
+  /// One of: starter, growth, premium
+  plan               String?  @default("starter")
+  /// Intercity or Pan-India — One of: intercity, pan_india
+  service_type       String?  @default("pan_india")
+  /// One of: active, suspended, expired
+  status             String?  @default("active")
+  /// Format: date
+  policy_start       String?
+  /// Format: date
+  policy_end         String?
+  /// Current subscription start — Format: date
+  subscription_start String?
+  /// Current subscription expiry — Format: date
+  subscription_end   String?
+  /// Latest FleetInvoice ID
+  last_invoice_id    String?
+  /// Admin email who assigned
+  assigned_by_admin  String?
+  notes              String?
+  created_date       DateTime @default(now()) @db.Timestamptz(3)
+  updated_date       DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by         String?
+  created_by_id      String?
+
+  @@index([user_email])
+  @@index([policy_number])
+  @@index([status])
+  @@index([created_date])
+  @@map("fleet_owners")
+}
+
+model FleetVehicle {
+  id                   String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// FleetOwner entity ID
+  fleet_owner_id       String?
+  /// Owner's email
+  owner_email          String?
+  /// Policy number
+  policy_number        String?
+  /// Registration number e.g. DL01AB1234
+  vehicle_number       String?
+  /// Vehicle type — One of: cab, lcv, truck, bus, other
+  vehicle_type         String?
+  /// e.g. Tata Ace, Ashok Leyland
+  make_model           String?
+  /// Manufacturing year
+  year                 Float?
+  /// RC expiry date — Format: date
+  rc_expiry            String?
+  /// PUC expiry date — Format: date
+  puc_expiry           String?
+  /// Fitness certificate expiry — Format: date
+  fitness_expiry       String?
+  /// Insurance expiry — Format: date
+  insurance_expiry     String?
+  /// Permit expiry — Format: date
+  permit_expiry        String?
+  /// FleetDriver entity ID
+  assigned_driver_id   String?
+  /// Driver name
+  assigned_driver_name String?
+  /// Current legal status — One of: clear, case_active, challan_pending, vehicle_seized
+  legal_status         String?  @default("clear")
+  /// RGLCase ID if any
+  active_case_id       String?
+  /// Admin notes
+  notes                String?
+  is_active            Boolean? @default(true)
+  created_date         DateTime @default(now()) @db.Timestamptz(3)
+  updated_date         DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by           String?
+  created_by_id        String?
+
+  @@index([fleet_owner_id])
+  @@index([owner_email])
+  @@index([policy_number])
+  @@index([created_date])
+  @@map("fleet_vehicles")
+}
+
+model Hearing {
+  id                  String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Reference to Case entity ID
+  case_id             String?
+  /// Scheduled hearing date & time — Format: date-time
+  hearing_date        String?
+  /// Name of the court
+  court_name          String?
+  /// Name of the judge
+  judge_name          String?
+  /// Outcome / order passed
+  outcome             String?
+  /// Next date given by court — Format: date
+  next_date           String?
+  /// Hearing status — One of: upcoming, completed, adjourned, cancelled
+  status              String?  @default("upcoming")
+  /// Whether order has been uploaded
+  order_uploaded      Boolean? @default(false)
+  /// URL of uploaded order document
+  order_url           String?
+  /// Hearing notes
+  notes               String?
+  /// Compliance deadline arising from this hearing — Format: date
+  compliance_deadline String?
+  created_date        DateTime @default(now()) @db.Timestamptz(3)
+  updated_date        DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by          String?
+  created_by_id       String?
+
+  @@index([case_id])
+  @@index([status])
+  @@index([created_date])
+  @@map("hearings")
+}
+
+model HeroBanner {
+  id            String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Slide title (optional)
+  title         String?
+  /// Slide subtitle text
+  subtitle      String?
+  /// Banner image URL (16:9 recommended)
+  image_url     String?
+  /// CTA button label
+  cta_label     String?
+  /// CTA button link (page path)
+  cta_link      String?
+  /// Display order (lower = first)
+  order         Float?
+  /// Whether the slide is visible
+  is_active     Boolean? @default(true)
+  /// Cannot be deleted or edited (first slide)
+  is_fixed      Boolean? @default(false)
+  /// Optional description or internal notes about this banner
+  description   String?
+  created_date  DateTime @default(now()) @db.Timestamptz(3)
+  updated_date  DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by    String?
+  created_by_id String?
+
+  @@index([created_date])
+  @@map("hero_banners")
+}
+
+model JobApplication {
+  id              String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// JobOpening entity ID
+  job_id          String?
+  job_title       String?
+  applicant_name  String?
+  applicant_email String?
+  applicant_phone String?
+  /// Uploaded resume URL
+  resume_url      String?
+  cover_letter    String?
+  /// Answers to admin-defined custom fields
+  custom_answers  Json?
+  /// One of: applied, under_review, shortlisted, interview_scheduled, on_hold, hired, rejected, duplicate
+  status          String?  @default("applied")
+  /// Internal notes, tags [TAG:...], and activity log — not shown to candidate
+  admin_notes     String?
+  /// Format: date-time
+  interview_date  String?
+  reviewed_by     String?
+  reject_reason   String?
+  /// Optional description or additional context for this job application
+  description     String?
+  created_date    DateTime @default(now()) @db.Timestamptz(3)
+  updated_date    DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by      String?
+  created_by_id   String?
+
+  @@index([applicant_email])
+  @@index([status])
+  @@index([created_date])
+  @@map("job_applications")
+}
+
+model JobOpening {
+  id            String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Job title
+  title         String?
+  /// Department — One of: legal, technology, marketing, operations, content, hr, rgl
+  department    String?
+  /// City / Remote
+  location      String?
+  /// One of: full_time, part_time, internship, contract
+  type          String?  @default("full_time")
+  /// Full job description
+  description   String?
+  /// Requirements list
+  requirements  String?
+  /// e.g. ₹4–6 LPA
+  salary_range  String?
+  is_active     Boolean? @default(true)
+  /// Admin-defined form fields: [{label, type, required}]
+  custom_fields Json?
+  created_date  DateTime @default(now()) @db.Timestamptz(3)
+  updated_date  DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by    String?
+  created_by_id String?
+
+  @@index([created_date])
+  @@map("job_openings")
+}
+
+model LGBeneficiary {
+  id                String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  name              String?
+  /// One of: SC/ST, OBC, General, Women, Child, Disabled, Minority, Other
+  category          String?  @default("General")
+  /// One of: Domestic Violence, Labour Rights, Land Dispute, Criminal, Child Rights, Other
+  issue_type        String?  @default("Other")
+  mobile            String?
+  address           String?
+  /// Format: date
+  intake_date       String?
+  /// One of: Police, Court, Walk-in, Partner NGO, Other
+  referred_by       String?  @default("Walk-in")
+  case_id           String?
+  /// Legal aid / Counselling / Shelter / Mediation / Document assistance
+  services_provided Json?
+  case_officer      String?
+  /// One of: Active, Resolved, Referred Out, Lost Contact
+  status            String?  @default("Active")
+  outcome           String?
+  owner_email       String?
+  created_date      DateTime @default(now()) @db.Timestamptz(3)
+  updated_date      DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by        String?
+  created_by_id     String?
+
+  @@index([case_id])
+  @@index([status])
+  @@index([owner_email])
+  @@index([created_date])
+  @@map("lg_beneficiaries")
+}
+
+model LGCase {
+  id                      String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// System-generated unique ID (e.g., LG-2026-CV-0041)
+  case_id                 String?
+  /// Short descriptive name (e.g., Sharma v. State of Delhi)
+  case_title              String?
+  /// Court-assigned number (CNR / Diary / Suit number)
+  case_number             String?
+  /// Court's unique case number for e-courts integration
+  cnr_number              String?
+  /// Case type — One of: Civil, Criminal, Constitutional, Arbitration, Consumer, MACT, Labour, Family, Revenue, Other
+  case_type               String?
+  /// e.g., Civil Suit / Execution / Appeal / Revision / Writ
+  sub_type                String?
+  /// Name of court — Supreme Court, High Court, District, Tribunal, NCLT, etc.
+  court_tribunal          String?
+  /// City and state of the court
+  court_location          String?
+  /// Bench number or courtroom number
+  bench_court_no          String?
+  /// Name of judge / judicial officer
+  presiding_judge         String?
+  /// Format: date
+  filing_date             String?
+  /// Format: date
+  registration_date       String?
+  /// Our Side — One of: Petitioner, Appellant, Complainant, Plaintiff, Respondent, Defendant
+  our_side                String?
+  /// One of: Critical, High, Medium, Low
+  priority                String?  @default("Medium")
+  /// Free-form tags
+  case_tags               Json?
+  /// Primary advocate email
+  assigned_to             String?
+  assigned_to_name        String?
+  /// Supporting team member emails
+  team_members            Json?
+  /// Free text summary of the matter
+  description             String?
+  is_ngo_case             Boolean? @default(false)
+  /// FK to LGClient
+  client_id               String?
+  client_name             String?
+  opposing_party          String?
+  opposing_counsel        String?
+  opposing_counsel_mobile String?
+  /// One of: Active, Stayed, Disposed, Appealed, Archived, On Hold
+  overall_status          String?  @default("Active")
+  /// One of: Filing, Admission, Notice, Reply, Evidence, Arguments, Reserved, Judgment, Execution
+  current_stage           String?  @default("Filing")
+  /// Format: date
+  next_hearing_date       String?
+  next_hearing_purpose    String?
+  /// Estimated month/year of disposal
+  expected_resolution     String?
+  /// One of: Pending, Won, Lost, Settled, Withdrawn, Dismissed, Compounded
+  outcome                 String?  @default("Pending")
+  /// Format: date
+  outcome_date            String?
+  outcome_notes           String?
+  total_agreed_fee        Float?   @default(0)
+  total_billed            Float?   @default(0)
+  total_received          Float?   @default(0)
+  total_pending           Float?   @default(0)
+  /// Firm owner email
+  owner_email             String?
+  created_date            DateTime @default(now()) @db.Timestamptz(3)
+  updated_date            DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by              String?
+  created_by_id           String?
+
+  @@index([case_id])
+  @@index([client_id])
+  @@index([owner_email])
+  @@index([created_date])
+  @@map("lg_cases")
+}
+
+model LGClient {
+  id                String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Full legal name
+  client_name       String?
+  /// One of: Individual, Company, Trust, Govt. Body, NGO, Accused
+  client_type       String?  @default("Individual")
+  mobile            String?
+  email             String?
+  address           String?
+  /// Optional — for affidavit and compliance purposes
+  aadhar_pan        String?
+  /// Source of client
+  referred_by       String?
+  /// One of: Regular Client, Walk-in, NGO Beneficiary, Pro Bono
+  category          String?  @default("Regular Client")
+  total_billed      Float?   @default(0)
+  total_received    Float?   @default(0)
+  total_outstanding Float?   @default(0)
+  /// Format: date
+  client_since      String?
+  notes             String?
+  portal_access     Boolean? @default(false)
+  owner_email       String?
+  created_date      DateTime @default(now()) @db.Timestamptz(3)
+  updated_date      DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by        String?
+  created_by_id     String?
+
+  @@index([email])
+  @@index([owner_email])
+  @@index([created_date])
+  @@map("lg_clients")
+}
+
+model LGCompliance {
+  id                  String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// e.g., 80G Certificate Renewal, FCRA Annual Return
+  item_name           String?
+  /// One of: 80G/12A, FCRA, Annual Report, Audit, CSR, State Registration, PF/ESI, IT Return, Board Meeting, Project Report, Other
+  compliance_type     String?  @default("Other")
+  /// Format: date
+  due_date            String?
+  /// One of: One-time, Monthly, Quarterly, Annual, Every 5 Years, As Required
+  frequency           String?  @default("Annual")
+  governing_authority String?
+  alert_days_before   Float?   @default(30)
+  /// One of: Pending, In Progress, Done, Overdue
+  status              String?  @default("Pending")
+  /// Format: date
+  completed_date      String?
+  notes               String?
+  attachment_url      String?
+  managed_by          String?
+  owner_email         String?
+  created_date        DateTime @default(now()) @db.Timestamptz(3)
+  updated_date        DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by          String?
+  created_by_id       String?
+
+  @@index([status])
+  @@index([owner_email])
+  @@index([created_date])
+  @@map("lg_compliances")
+}
+
+model LGDocument {
+  id              String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Descriptive name
+  doc_name        String?
+  /// One of: Plaint, Written Statement, Affidavit, Order, Judgment, Notice, Legal Notice, Vakalatnama, Evidence, Correspondence, Internal, Other
+  doc_type        String?  @default("Other")
+  case_id         String?
+  case_title      String?
+  hearing_id      String?
+  filed_by        String?
+  /// Format: date
+  doc_date        String?
+  file_url        String?
+  version         String?  @default("v1")
+  /// One of: Internal Only, Shared with Client, Shared with Court
+  confidentiality String?  @default("Internal Only")
+  notes           String?
+  /// For documents with validity period — Format: date
+  expiry_date     String?
+  owner_email     String?
+  created_date    DateTime @default(now()) @db.Timestamptz(3)
+  updated_date    DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by      String?
+  created_by_id   String?
+
+  @@index([case_id])
+  @@index([owner_email])
+  @@index([created_date])
+  @@map("lg_documents")
+}
+
+model LGHearing {
+  id                 String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// FK to LGCase
+  case_id            String?
+  case_title         String?
+  /// Format: date
+  hearing_date       String?
+  /// Approximate time (if known)
+  hearing_time       String?
+  /// Purpose of Hearing — One of: Arguments, Evidence, Disposal, Order, Mention, Admission, Notice, Reply, Misc
+  purpose            String?
+  /// Court name and location
+  court_board        String?
+  /// Which advocate appeared
+  appearance_by      String?
+  /// Free text — orders passed, arguments heard, documents filed
+  what_happened      String?
+  /// Specific court orders
+  orders_passed      String?
+  /// Format: date
+  next_date          String?
+  next_date_purpose  String?
+  adjournment_reason String?
+  /// List of documents submitted to court
+  documents_filed    String?
+  fee_charged        Float?   @default(0)
+  reminder_sent      Boolean? @default(false)
+  /// One of: Upcoming, Completed, Adjourned, Cancelled
+  status             String?  @default("Upcoming")
+  owner_email        String?
+  created_date       DateTime @default(now()) @db.Timestamptz(3)
+  updated_date       DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by         String?
+  created_by_id      String?
+
+  @@index([case_id])
+  @@index([status])
+  @@index([owner_email])
+  @@index([created_date])
+  @@map("lg_hearings")
+}
+
+model LGInvoice {
+  id            String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  invoice_no    String?
+  case_id       String?
+  case_title    String?
+  client_id     String?
+  client_name   String?
+  /// Format: date
+  invoice_date  String?
+  /// Format: date
+  due_date      String?
+  items         Json?
+  subtotal      Float?   @default(0)
+  gst_percent   Float?   @default(0)
+  gst_amount    Float?   @default(0)
+  total_amount  Float?   @default(0)
+  /// One of: Draft, Sent, Paid, Partially Paid, Overdue, Cancelled
+  status        String?  @default("Draft")
+  paid_amount   Float?   @default(0)
+  notes         String?
+  owner_email   String?
+  created_date  DateTime @default(now()) @db.Timestamptz(3)
+  updated_date  DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by    String?
+  created_by_id String?
+
+  @@index([case_id])
+  @@index([client_id])
+  @@index([status])
+  @@index([owner_email])
+  @@index([created_date])
+  @@map("lg_invoices")
+}
+
+model LGTask {
+  id               String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  task_title       String?
+  case_id          String?
+  case_title       String?
+  assigned_to      String?
+  assigned_to_name String?
+  /// Format: date
+  due_date         String?
+  /// One of: Urgent, High, Normal, Low
+  priority         String?  @default("Normal")
+  /// One of: Pending, In Progress, Done, Overdue, Cancelled
+  status           String?  @default("Pending")
+  description      String?
+  checklist        Json?
+  attachments      Json?
+  /// Format: date
+  completed_on     String?
+  notes            String?
+  owner_email      String?
+  created_date     DateTime @default(now()) @db.Timestamptz(3)
+  updated_date     DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by       String?
+  created_by_id    String?
+
+  @@index([case_id])
+  @@index([status])
+  @@index([owner_email])
+  @@index([created_date])
+  @@map("lg_tasks")
+}
+
+model LGTransaction {
+  id             String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  case_id        String?
+  case_title     String?
+  client_id      String?
+  client_name    String?
+  /// Format: date
+  txn_date       String?
+  amount         Float?
+  /// One of: Cash, Cheque, NEFT, UPI, DD, Card, Online
+  mode           String?  @default("Cash")
+  /// Cheque no., UTR, UPI ref, etc.
+  reference_no   String?
+  received_by    String?
+  receipt_no     String?
+  /// One of: Retainer, Hearing Fee, Drafting, Court Fee, Reimbursement, Success Fee, Other
+  purpose        String?  @default("Hearing Fee")
+  notes          String?
+  attachment_url String?
+  /// One of: Income, Expense
+  type           String?  @default("Income")
+  owner_email    String?
+  created_date   DateTime @default(now()) @db.Timestamptz(3)
+  updated_date   DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by     String?
+  created_by_id  String?
+
+  @@index([case_id])
+  @@index([client_id])
+  @@index([owner_email])
+  @@index([created_date])
+  @@map("lg_transactions")
+}
+
+model Lawyer {
+  id                   String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Full name of the lawyer
+  full_name            String?
+  /// Email address
+  email                String?
+  /// Phone number
+  phone                String?
+  /// City of practice
+  city                 String?
+  /// State
+  state                String?
+  /// Profile photo URL
+  photo_url            String?
+  /// Bar association name
+  bar_association      String?
+  /// Bar council enrollment number
+  bar_council_number   String?
+  /// Primary jurisdiction
+  primary_jurisdiction String?
+  /// Years of practice
+  years_of_practice    Float?
+  /// Court in which they practice
+  court_of_practice    String?
+  /// Base rate per 30 min in INR
+  consultation_rate    Float?
+  /// Chat-specific rate per 30 min in INR
+  chat_rate            Float?
+  /// Audio call rate per 30 min in INR
+  audio_rate           Float?
+  /// Video call rate per 30 min in INR
+  video_rate           Float?
+  /// Discounted rate per 30 min in INR
+  discounted_rate      Float?
+  /// Promo label
+  offer_label          String?
+  /// Areas of expertise
+  specializations      Json?
+  /// Languages spoken
+  languages            Json?
+  /// Short bio/description
+  bio                  String?
+  /// Average rating out of 5
+  rating               Float?
+  /// Total number of reviews
+  total_reviews        Float?
+  /// Total consultations/cases handled — editable by admin
+  total_consultations  Float?   @default(0)
+  /// Whether the lawyer is currently online
+  is_online            Boolean?
+  /// Whether the lawyer is currently on an active call/chat
+  is_on_call           Boolean? @default(false)
+  /// Whether the lawyer is verified
+  is_verified          Boolean?
+  /// Whether the lawyer is top rated
+  is_top_rated         Boolean?
+  /// Account status — One of: active, pending, suspended
+  status               String?  @default("pending")
+  /// Bar council ID document URL
+  bar_council_id_url   String?
+  /// Whether chat consultations are enabled
+  chat_enabled         Boolean? @default(true)
+  /// Whether audio call consultations are enabled
+  audio_enabled        Boolean? @default(true)
+  /// Whether video call consultations are enabled
+  video_enabled        Boolean? @default(true)
+  /// Bank account holder name
+  account_holder       String?
+  /// Bank account number
+  account_number       String?
+  /// IFSC code
+  ifsc_code            String?
+  /// Bank name
+  bank_name            String?
+  /// UPI ID for payouts
+  upi_id               String?
+  created_date         DateTime @default(now()) @db.Timestamptz(3)
+  updated_date         DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by           String?
+  created_by_id        String?
+
+  @@index([email])
+  @@index([status])
+  @@index([created_date])
+  @@map("lawyers")
+}
+
+model LawyerApplication {
+  id                   String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Full name
+  full_name            String?
+  /// Email
+  email                String?
+  /// Phone number
+  phone                String?
+  /// City
+  city                 String?
+  /// State
+  state                String?
+  /// Bar association name
+  bar_association      String?
+  /// Bar council enrollment number
+  bar_council_number   String?
+  /// Primary jurisdiction
+  primary_jurisdiction String?
+  /// Experience range — One of: 0-2 years, 3-5 years, 6-10 years, 11-15 years, 15+ years
+  years_of_practice    String?
+  /// Court of practice
+  court_of_practice    String?
+  /// Consultation rate per 30 min
+  consultation_rate    Float?
+  /// Areas of expertise
+  specializations      Json?
+  /// Languages spoken
+  languages            Json?
+  /// Photo URL
+  photo_url            String?
+  /// Bar council ID document URL
+  bar_council_id_url   String?
+  /// Reason to join
+  reason               String?
+  /// Application status — One of: pending, approved, rejected
+  status               String?  @default("pending")
+  /// Optional description or additional notes about the application
+  description          String?
+  created_date         DateTime @default(now()) @db.Timestamptz(3)
+  updated_date         DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by           String?
+  created_by_id        String?
+
+  @@index([email])
+  @@index([status])
+  @@index([created_date])
+  @@map("lawyer_applications")
+}
+
+model LegalService {
+  id            String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Service title
+  title         String?
+  /// Detailed description
+  description   String?
+  /// Service category — One of: legal_notices, registration, compliance, ip_services, consultation, litigation
+  category      String?
+  /// Price in INR
+  price         Float?
+  /// Expected delivery in days
+  delivery_days Float?
+  /// Whether this is a popular service
+  is_popular    Boolean?
+  /// Whether the service is active
+  is_active     Boolean? @default(true)
+  created_date  DateTime @default(now()) @db.Timestamptz(3)
+  updated_date  DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by    String?
+  created_by_id String?
+
+  @@index([created_date])
+  @@map("legal_services")
+}
+
+model Message {
+  id            String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Case or consultation ID this message belongs to
+  case_id       String?
+  /// Sender's email
+  sender_email  String?
+  /// Sender's name
+  sender_name   String?
+  /// Role of the sender — One of: client, advocate, admin, ai
+  sender_role   String?
+  /// Message content
+  content       String?
+  /// Internal note (only visible to advocate/admin)
+  is_internal   Boolean? @default(false)
+  /// Was this message AI-suggested?
+  ai_suggested  Boolean? @default(false)
+  created_date  DateTime @default(now()) @db.Timestamptz(3)
+  updated_date  DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by    String?
+  created_by_id String?
+
+  @@index([case_id])
+  @@index([sender_email])
+  @@index([created_date])
+  @@map("messages")
+}
+
+model PromoCode {
+  id             String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Promo code string e.g. FIRST5, ROADGUARD30
+  code           String?
+  /// Human-readable description of the offer
+  description    String?
+  /// Type of promo benefit — One of: free_minutes, free_trial_days, wallet_bonus, discount_percent
+  type           String?
+  /// Value: minutes, days, INR amount, or percent
+  value          Float?
+  /// Specific use case e.g. first consultation, RoadGuard trial, new user
+  use_case       String?
+  /// Maximum number of times code can be used (0 = unlimited)
+  max_uses       Float?
+  /// How many times code has been used
+  used_count     Float?   @default(0)
+  /// Valid from date — Format: date
+  valid_from     String?
+  /// Expiry date — Format: date
+  valid_until    String?
+  /// Whether code is active
+  is_active      Boolean? @default(true)
+  /// Who can use this code — One of: all, new_users, roadguard, consultation
+  applicable_for String?  @default("all")
+  created_date   DateTime @default(now()) @db.Timestamptz(3)
+  updated_date   DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by     String?
+  created_by_id  String?
+
+  @@index([code])
+  @@index([created_date])
+  @@map("promo_codes")
+}
+
+model RGLAdvocate {
+  id                   String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Reference to Lawyer entity ID
+  lawyer_id            String?
+  /// Advocate full name
+  lawyer_name          String?
+  /// Advocate email
+  lawyer_email         String?
+  /// Contact phone
+  phone                String?
+  /// Named zone e.g. Dwarka, Delhi
+  zone_name            String?
+  /// Service radius in km
+  zone_radius_km       Float?   @default(30)
+  /// Zone center latitude
+  zone_lat             Float?
+  /// Zone center longitude
+  zone_lng             Float?
+  /// Array of {lat, lng, label} boundary points (e.g. police stations)
+  territory_points     Json?
+  /// Preferred shift — One of: day, night, both
+  shift_preference     String?  @default("both")
+  /// RGL specializations: bail, vehicle_release, mact, challan, lok_adalat, motor_accident, other
+  specializations      Json?
+  /// Manual entry for 'other' specialization
+  other_specialization String?
+  /// Whether advocate is active in RGL network
+  is_active            Boolean? @default(true)
+  /// Currently available for dispatch
+  is_online            Boolean? @default(false)
+  /// Number of strikes (Schedule B)
+  strike_count         Float?   @default(0)
+  /// RGL advocate status — One of: pending, approved, suspended, terminated
+  status               String?  @default("pending")
+  /// Current month earnings
+  monthly_earnings     Float?   @default(0)
+  /// Total RGL cases handled
+  total_cases          Float?   @default(0)
+  /// Average rating
+  rating               Float?
+  /// Bar council enrollment number
+  bar_council_number   String?
+  /// Date approved as RGL advocate — Format: date
+  joining_date         String?
+  /// Optional notes or profile description for this advocate
+  description          String?
+  created_date         DateTime @default(now()) @db.Timestamptz(3)
+  updated_date         DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by           String?
+  created_by_id        String?
+
+  @@index([lawyer_id])
+  @@index([lawyer_email])
+  @@index([status])
+  @@index([created_date])
+  @@map("rgl_advocates")
+}
+
+model RGLCase {
+  id                     String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Auto-generated e.g. RG-2026-0001
+  case_number            String?
+  /// Client / policyholder name
+  client_name            String?
+  /// Client phone
+  client_phone           String?
+  /// Client email
+  client_email           String?
+  /// Incident location description
+  incident_location      String?
+  /// Incident latitude
+  incident_lat           Float?
+  /// Incident longitude
+  incident_lng           Float?
+  /// Nearest police station
+  police_station         String?
+  /// Type of RGL case — One of: bail_vehicle_release, bail_only, vehicle_release_only, mact, spot_legal, challan, lok_adalat
+  case_type              String?
+  /// Vehicle type e.g. Commercial Truck, Car
+  vehicle_type           String?
+  /// Vehicle registration number
+  vehicle_number         String?
+  /// RGLAdvocate entity ID
+  assigned_advocate_id   String?
+  /// Assigned advocate name
+  assigned_advocate_name String?
+  /// Case milestone status — One of: unassigned, dispatched, m1_pending, m1_done, m2_pending, m2_done, m3_pending, completed, cancelled
+  status                 String?  @default("unassigned")
+  /// M1 arrival fee
+  m1_fee                 Float?
+  /// M2 bail/release fee
+  m2_fee                 Float?
+  /// M3 retention fee
+  m3_fee                 Float?
+  /// Format: date-time
+  m1_completed_at        String?
+  /// Format: date-time
+  m2_completed_at        String?
+  /// Format: date-time
+  m3_completed_at        String?
+  /// Shift when case came in — One of: day, night
+  shift                  String?
+  /// Admin / case notes
+  notes                  String?
+  /// When dispatch notification was sent — Format: date-time
+  dispatch_time          String?
+  /// Actual M1 response time in minutes
+  response_time_minutes  Float?
+  created_date           DateTime @default(now()) @db.Timestamptz(3)
+  updated_date           DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by             String?
+  created_by_id          String?
+
+  @@index([client_email])
+  @@index([assigned_advocate_id])
+  @@index([status])
+  @@index([created_date])
+  @@map("rgl_cases")
+}
+
+model RGLReferral {
+  id                String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Email of the referrer
+  user_email        String?
+  user_name         String?
+  /// Unique code e.g. REF-RAMESH-001
+  referral_code     String?
+  is_active         Boolean? @default(true)
+  total_referrals   Float?   @default(0)
+  /// Total commission earned in INR
+  total_earned      Float?   @default(0)
+  /// Withdrawable balance
+  available_balance Float?   @default(0)
+  total_withdrawn   Float?   @default(0)
+  /// Optional notes about this referral account
+  description       String?
+  created_date      DateTime @default(now()) @db.Timestamptz(3)
+  updated_date      DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by        String?
+  created_by_id     String?
+
+  @@index([user_email])
+  @@index([referral_code])
+  @@index([created_date])
+  @@map("rgl_referrals")
+}
+
+model RGLSubscription {
+  id                  String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Unique RGL policy number e.g. RGL-2026-0001
+  policy_number       String?
+  buyer_name          String?
+  buyer_email         String?
+  buyer_phone         String?
+  fleet_size          Float?
+  vehicle_type        String?
+  city                String?
+  /// e.g. Kavach Starter, Kavach Growth, Kavach Premium
+  plan_name           String?
+  /// One of: intercity, pan_india
+  plan_type           String?
+  amount_paid         Float?
+  discount_amount     Float?   @default(0)
+  /// Promo/referral code entered by buyer
+  referral_code_used  String?
+  /// Email of person who referred
+  referrer_email      String?
+  /// 15% commission credited to referrer
+  referral_commission Float?   @default(0)
+  txn_id              String?
+  /// Format: date
+  payment_date        String?
+  /// 24-48h after payment — Format: date
+  activation_date     String?
+  /// 1 year from activation — Format: date
+  expiry_date         String?
+  /// Whether to auto-renew on expiry
+  auto_renewal        Boolean? @default(true)
+  /// One of: pending, active, expired, cancelled
+  status              String?  @default("active")
+  invoice_url         String?
+  notes               String?
+  created_date        DateTime @default(now()) @db.Timestamptz(3)
+  updated_date        DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by          String?
+  created_by_id       String?
+
+  @@index([policy_number])
+  @@index([buyer_email])
+  @@index([referrer_email])
+  @@index([txn_id])
+  @@index([status])
+  @@index([created_date])
+  @@map("rgl_subscriptions")
+}
+
+model RGLWithdrawal {
+  id             String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  referrer_email String?
+  referrer_name  String?
+  referral_code  String?
+  amount         Float?
+  account_holder String?
+  account_number String?
+  ifsc_code      String?
+  bank_name      String?
+  upi_id         String?
+  /// One of: pending, approved, paid, rejected
+  status         String?  @default("pending")
+  admin_notes    String?
+  /// Optional notes or reason for this withdrawal request
+  description    String?
+  created_date   DateTime @default(now()) @db.Timestamptz(3)
+  updated_date   DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by     String?
+  created_by_id  String?
+
+  @@index([referrer_email])
+  @@index([referral_code])
+  @@index([status])
+  @@index([created_date])
+  @@map("rgl_withdrawals")
+}
+
+model ServiceCase {
+  id                   String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Client's email
+  client_email         String?
+  /// Client's name
+  client_name          String?
+  /// ID of the legal service
+  service_id           String?
+  /// Title of the service
+  service_title        String?
+  /// Case status — One of: pending, active, in_review, completed, cancelled
+  status               String?  @default("pending")
+  /// Amount paid
+  amount_paid          Float?
+  /// Assigned lawyer ID
+  assigned_lawyer_id   String?
+  /// Assigned lawyer name
+  assigned_lawyer_name String?
+  /// Uploaded document URLs
+  documents            Json?
+  /// Case notes
+  notes                String?
+  created_date         DateTime @default(now()) @db.Timestamptz(3)
+  updated_date         DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by           String?
+  created_by_id        String?
+
+  @@index([client_email])
+  @@index([status])
+  @@index([assigned_lawyer_id])
+  @@index([created_date])
+  @@map("service_cases")
+}
+
+model ServiceRequest {
+  id                   String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Client's email
+  client_email         String?
+  /// Client's full name
+  client_name          String?
+  /// Client's phone number
+  client_phone         String?
+  /// ID of the legal service
+  service_id           String?
+  /// Title of the service
+  service_title        String?
+  /// Service category
+  category             String?
+  /// Selected package name
+  package_name         String?
+  /// Selected package price string
+  package_price        String?
+  /// Amount paid in INR
+  amount_paid          Float?
+  /// Human-readable SR number e.g. SR-2026-00042
+  service_request_no   String?
+  /// Cashfree order ID
+  payment_order_id     String?
+  /// One of: pending, paid, failed
+  payment_status       String?  @default("pending")
+  /// Client's problem/matter description
+  description          String?
+  /// Uploaded document URLs
+  documents            Json?
+  /// One of: pending, uploaded
+  doc_upload_status    String?  @default("pending")
+  /// One of: pending, in_review, assigned, completed, cancelled
+  status               String?  @default("pending")
+  assigned_lawyer_id   String?
+  assigned_lawyer_name String?
+  notes                String?
+  price_quoted         Float?
+  created_date         DateTime @default(now()) @db.Timestamptz(3)
+  updated_date         DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by           String?
+  created_by_id        String?
+
+  @@index([client_email])
+  @@index([payment_order_id])
+  @@index([status])
+  @@index([assigned_lawyer_id])
+  @@index([created_date])
+  @@map("service_requests")
+}
+
+model Session {
+  id               String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// User's email
+  user_email       String?
+  /// Lawyer entity ID
+  lawyer_id        String?
+  /// Lawyer name
+  lawyer_name      String?
+  /// Linked consultation ID
+  consultation_id  String?
+  /// Type of session — One of: call, chat
+  session_type     String?
+  /// Session status — One of: active, ended, expired
+  status           String?  @default("active")
+  /// Rate per minute in INR
+  rate_per_min     Float?
+  /// Session start time — Format: date-time
+  started_at       String?
+  /// Session end time — Format: date-time
+  ended_at         String?
+  /// Total billed minutes
+  duration_minutes Float?   @default(0)
+  /// Total amount charged
+  total_charged    Float?   @default(0)
+  /// Last time a tick deduction was made — Format: date-time
+  last_tick_at     String?
+  /// Unique key to prevent duplicate session creation (user_email-lawyer_id-consultation_id)
+  idempotency_key  String?
+  /// Optional notes about this session
+  description      String?
+  created_date     DateTime @default(now()) @db.Timestamptz(3)
+  updated_date     DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by       String?
+  created_by_id    String?
+
+  @@index([user_email])
+  @@index([lawyer_id])
+  @@index([consultation_id])
+  @@index([status])
+  @@index([created_date])
+  @@map("sessions")
+}
+
+model Wallet {
+  id              String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// User email
+  user_email      String?
+  /// Available balance in INR
+  balance         Float?   @default(0)
+  /// Bonus credit balance
+  bonus_balance   Float?   @default(0)
+  total_recharged Float?   @default(0)
+  total_spent     Float?   @default(0)
+  /// Optional notes about this wallet
+  description     String?
+  created_date    DateTime @default(now()) @db.Timestamptz(3)
+  updated_date    DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by      String?
+  created_by_id   String?
+
+  @@index([user_email])
+  @@index([created_date])
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id               String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  user_email       String?
+  /// Transaction type — One of: topup, deduction, refund, bonus
+  type             String?
+  /// Transaction amount in INR
+  amount           Float?
+  gst              Float?   @default(0)
+  net_amount       Float?
+  description      String?
+  lawyer_name      String?
+  consultation_id  String?
+  duration_minutes Float?
+  rate_per_min     Float?
+  /// One of: completed, processing, failed
+  status           String?  @default("completed")
+  payment_method   String?
+  /// Order/payment ID for idempotency — prevents duplicate credits
+  reference_id     String?
+  created_date     DateTime @default(now()) @db.Timestamptz(3)
+  updated_date     DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by       String?
+  created_by_id    String?
+
+  @@index([user_email])
+  @@index([consultation_id])
+  @@index([status])
+  @@index([reference_id])
+  @@index([created_date])
+  @@map("wallet_transactions")
+}
+
+model WithdrawalRequest {
+  id              String   @id @default(dbgenerated("substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 24)"))
+  /// Lawyer entity ID
+  lawyer_id       String?
+  /// Lawyer full name
+  lawyer_name     String?
+  /// Lawyer email
+  lawyer_email    String?
+  /// Requested withdrawal amount in INR
+  amount          Float?
+  /// Withdrawal method — One of: upi, bank
+  method          String?
+  /// UPI ID if method is UPI
+  upi_id          String?
+  /// Bank account holder name
+  account_holder  String?
+  /// Bank account number
+  account_number  String?
+  /// IFSC code
+  ifsc_code       String?
+  /// Bank name
+  bank_name       String?
+  /// Request status — One of: pending, approved, paid, rejected
+  status          String?  @default("pending")
+  /// Admin notes
+  admin_notes     String?
+  /// Admin email who processed
+  processed_by    String?
+  /// When processed — Format: date-time
+  processed_at    String?
+  /// Payment reference / UTR number
+  transaction_ref String?
+  /// Optional description or reason for this withdrawal request
+  description     String?
+  created_date    DateTime @default(now()) @db.Timestamptz(3)
+  updated_date    DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+  created_by      String?
+  created_by_id   String?
+
+  @@index([lawyer_id])
+  @@index([lawyer_email])
+  @@index([status])
+  @@index([created_date])
+  @@map("withdrawal_requests")
+}
