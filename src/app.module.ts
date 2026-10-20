@@ -3,15 +3,20 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AiModule } from './ai/ai.module.js';
 import { AuthGuard } from './auth/auth.guard.js';
 import { AuthModule } from './auth/auth.module.js';
 import { PrismaExceptionFilter } from './common/prisma-exception.filter.js';
 import { Env, validateEnv } from './config/env.js';
 import { EntitiesModule } from './entities/entities.module.js';
+import { FunctionsModule } from './functions/functions.module.js';
 import { HealthController } from './health/health.controller.js';
+import { IntegrationsModule } from './integrations/integrations.module.js';
 import { MailModule } from './mail/mail.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { SeoModule } from './seo/seo.module.js';
 import { SessionsModule } from './sessions/sessions.module.js';
 import { WalletModule } from './wallet/wallet.module.js';
 
@@ -34,6 +39,11 @@ import { WalletModule } from './wallet/wallet.module.js';
     WalletModule,
     PaymentsModule,
     SessionsModule,
+    AiModule,
+    IntegrationsModule,
+    FunctionsModule,
+    NotificationsModule,
+    SeoModule,
   ],
   controllers: [HealthController],
   providers: [

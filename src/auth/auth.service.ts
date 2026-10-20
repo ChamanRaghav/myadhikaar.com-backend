@@ -108,6 +108,9 @@ export class AuthService {
   private async login(user: User, meta: ClientMeta) {
     if (user.disabled) throw new ForbiddenException('This account is disabled');
     const updated = await this.prisma.user.update({ where: { id: user.id }, data: { last_login_at: new Date() } });
+    if (!user.last_login_at) {
+      this.mail.background(this.mail.sendTemplate('user_welcome', user.email, { userName: user.full_name || user.email.split('@')[0] }), 'welcome email');
+    }
     const tokens = await this.tokens.issue(updated, meta);
     return { ...tokens, user: await this.view(updated) };
   }
