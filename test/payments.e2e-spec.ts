@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { CashfreeClient } from '../src/payments/cashfree.client.js';
 import { FakeCashfree, sign } from './fake-cashfree.js';
@@ -111,6 +112,21 @@ describe('payments', () => {
       await t.http().get(`/api/payments/orders/${first.body.order_id}`).set(auth()).expect(200);
       expect(await balance()).toBe(500);
       await createOrder({ purpose: 'wallet_recharge', wallet: { coupon: 'WALLET500' } }).expect(400);
+    });
+
+    it('fails cleanly when the gateway is down', async () => {
+      const original = cf.createOrder;
+      cf.createOrder = async () => {
+        throw new ServiceUnavailableException('Payment gateway is unreachable. Please try again.');
+      };
+      try {
+        const res = await createOrder({ purpose: 'wallet_recharge', wallet: { amount: 100 } }).expect(503);
+        expect(res.body.message).toContain('unreachable');
+        const order = await t.prisma.paymentOrder.findFirstOrThrow({ where: { user_email: 'payer@example.com' } });
+        expect(order.status).toBe('failed');
+      } finally {
+        cf.createOrder = original;
+      }
     });
 
     it("hides other users' orders", async () => {

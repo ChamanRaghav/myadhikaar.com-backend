@@ -103,6 +103,10 @@ export class CashfreeClient {
         'x-client-secret': secret,
         'x-api-version': '2023-08-01',
       },
+      signal: AbortSignal.timeout(15_000),
+    }).catch((err: Error) => {
+      this.logger.warn(`Cashfree unreachable: ${err.message}`);
+      throw new ServiceUnavailableException('Payment gateway is unreachable. Please try again.');
     });
   }
 }

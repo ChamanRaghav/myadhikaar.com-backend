@@ -138,6 +138,9 @@ export class PaymentsService {
     const appUrl = this.config.get('APP_URL', { infer: true });
     const apiUrl = this.config.get('API_URL', { infer: true });
     const profile = await this.prisma.user.findUnique({ where: { id: user.id }, select: { phone: true } });
+    // If Cashfree never got the order, close it so reconciliation doesn't chase it
+    const markFailed = (err: unknown) =>
+      this.prisma.paymentOrder.update({ where: { id }, data: { status: 'failed' } }).then(() => Promise.reject(err));
     const { payment_session_id } = await this.cashfree.createOrder({
       order_id: id,
       amount,
@@ -150,7 +153,7 @@ export class PaymentsService {
       },
       return_url: `${appUrl}${RETURN_PATHS[dto.purpose]}?order_id=${id}`,
       notify_url: apiUrl ? `${apiUrl}/api/payments/webhook/cashfree` : undefined,
-    });
+    }).catch(markFailed);
     return { order_id: id, payment_session_id, amount, purpose: dto.purpose, environment: this.cashfree.environment };
   }
 
