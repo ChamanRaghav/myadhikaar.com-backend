@@ -193,6 +193,9 @@ describe('entities API', () => {
       expect((await get('/api/entities/Blog').expect(200)).body).toHaveLength(1);
       await t.http().put(`/api/entities/Blog/${post.id}`).send({ view_count: 99999 }).expect(200);
       expect((await t.prisma.blog.findUnique({ where: { id: post.id } }))!.view_count).toBe(11);
+      // PATCH is the same partial update
+      await t.http().patch(`/api/entities/Blog/${post.id}`).send({ view_count: 99999 }).expect(200);
+      expect((await t.prisma.blog.findUnique({ where: { id: post.id } }))!.view_count).toBe(12);
       await t.http().put(`/api/entities/Blog/${post.id}`).send({ title: 'Hacked' }).expect(403);
     });
   });

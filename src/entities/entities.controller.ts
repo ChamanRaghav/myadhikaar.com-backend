@@ -60,8 +60,18 @@ export class EntitiesController {
   }
 
   @Put(':id')
-  @Patch(':id')
   update(
+    @Param('entity') entity: string,
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @CurrentUser() user: AuthUser | undefined,
+  ) {
+    return this.entities.update(entity, user, id, body);
+  }
+
+  /** Same as PUT: updates are always partial. (Stacked route decorators register only one method.) */
+  @Patch(':id')
+  patch(
     @Param('entity') entity: string,
     @Param('id') id: string,
     @Body() body: Record<string, unknown>,
